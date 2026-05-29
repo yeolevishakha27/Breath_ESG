@@ -1,0 +1,4 @@
+Plant,Fuel,Quantity,Unit,Date
+P001,Diesel,1000,L,2026-05-01
+P002,Petrol,500,ml,2026-05-02
+P003,Diesel,-50,L,2026-05-03
