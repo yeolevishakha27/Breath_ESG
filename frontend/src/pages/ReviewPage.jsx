@@ -11,7 +11,7 @@ function ReviewPage() {
 
   const fetchRecords = async () => {
     const res = await axios.get(
-      "http://127.0.0.1:8000/api/review/"
+      "https://breath-esg-backend-cx8m.onrender.com/api/review/"
     );
 
     setRecords(res.data);
@@ -22,7 +22,7 @@ function ReviewPage() {
     status
   ) => {
     await axios.post(
-      `http://127.0.0.1:8000/api/review/${id}/`,
+      `https://breath-esg-backend-cx8m.onrender.com/api/review/${id}/`,
       {
         status
       }

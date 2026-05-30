@@ -10,7 +10,7 @@ function Dashboard() {
 
   const loadData = async () => {
     const res = await axios.get(
-      "http://127.0.0.1:8000/api/review/"
+      "https://breath-esg-backend-cx8m.onrender.com/api/review/"
     );
 
     setRecords(res.data);
