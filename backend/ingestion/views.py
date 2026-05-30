@@ -16,108 +16,178 @@ class SapUploadView(APIView):
     parser_classes = [MultiPartParser]
 
     def get(self, request):
-        return Response({"message": "SAP Upload API Working"})
+        return Response({
+            "message": "SAP Upload API Working"
+        })
 
     def post(self, request):
+
         uploaded_file = request.FILES.get("file")
 
         if not uploaded_file:
-            return Response({"error": "No file uploaded"}, status=400)
+            return Response(
+                {"error": "No file uploaded"},
+                status=400
+            )
 
-        # Try to read CSV and be tolerant of different delimiters/locales
         try:
-            # let pandas sniff the separator
-            df = pd.read_csv(uploaded_file, sep=None, engine='python')
+            df = pd.read_csv(
+                uploaded_file,
+                sep=None,
+                engine="python"
+            )
+
         except Exception:
-            # fallback to a simpler read with common separators
             try:
                 uploaded_file.seek(0)
-                df = pd.read_csv(uploaded_file)
-            except Exception as e:
-                return Response({"error": f"CSV Read Error: {str(e)}"}, status=400)
 
-        # Normalize column names to ease mapping (strip / lower)
-        col_map = {c.strip(): c for c in df.columns}
-        lower_map = {c.lower().strip(): c for c in df.columns}
+                df = pd.read_csv(uploaded_file)
+
+            except Exception as e:
+                return Response(
+                    {
+                        "error": f"CSV Read Error: {str(e)}"
+                    },
+                    status=400
+                )
+
+        lower_map = {
+            c.lower().strip(): c
+            for c in df.columns
+        }
 
         def find_col(candidates):
             for c in candidates:
-                key = c.lower().strip()
-                if key in lower_map:
-                    return lower_map[key]
+                if c.lower().strip() in lower_map:
+                    return lower_map[
+                        c.lower().strip()
+                    ]
             return None
 
-        qty_col = find_col(["Quantity", "Menge", "Qty", "qty", "quantity"])
-        unit_col = find_col(["Unit", "Einheit", "unit", "u"])
-        activity_col = find_col(["Fuel", "Kraftstoff", "Activity", "activity", "Material"])
+        qty_col = find_col([
+            "Quantity",
+            "Menge",
+            "Qty"
+        ])
 
-        if not qty_col or not unit_col or not activity_col:
-            return Response({
-                "error": "CSV missing required columns. Expected columns like Quantity/Menge, Unit/Einheit, Fuel/Activity",
-                "found_columns": list(df.columns)
-            }, status=400)
+        unit_col = find_col([
+            "Unit",
+            "Einheit"
+        ])
 
-        company = Company.objects.first()
-        if not company:
-            return Response({"error": "Please create a Company first in Django Admin"}, status=400)
+        activity_col = find_col([
+            "Fuel",
+            "Activity",
+            "Material",
+            "Kraftstoff"
+        ])
 
-        source = DataSource.objects.create(company=company, source_type="SAP", file_name=uploaded_file.name)
+        if not qty_col:
+            return Response(
+                {
+                    "error":
+                    "Quantity column not found",
+                    "columns":
+                    list(df.columns)
+                },
+                status=400
+            )
+
+        if not unit_col:
+            return Response(
+                {
+                    "error":
+                    "Unit column not found",
+                    "columns":
+                    list(df.columns)
+                },
+                status=400
+            )
+
+        if not activity_col:
+            return Response(
+                {
+                    "error":
+                    "Fuel/Activity column not found",
+                    "columns":
+                    list(df.columns)
+                },
+                status=400
+            )
+
+        company, created = Company.objects.get_or_create(
+            name="Breathe ESG Demo"
+        )
+
+        source = DataSource.objects.create(
+            company=company,
+            source_type="SAP",
+            file_name=uploaded_file.name
+        )
 
         suspicious_count = 0
         records_created = 0
         errors = []
 
-        # simple unit normalization map -> returns (value, unit)
-        def normalize_unit(quantity, unit):
-            if not isinstance(unit, str):
-                unit = str(unit or "")
-            u = unit.strip().lower()
-            # Handle comma decimals in strings
+        def normalize_unit(value, unit):
+
             try:
-                if isinstance(quantity, str):
-                    q = float(quantity.replace(',', '').strip())
-                else:
-                    q = float(quantity)
-            except Exception:
-                # if unable to parse, propagate NaN
-                q = None
+                value = float(value)
+            except:
+                return None, unit
 
-            if q is None:
-                return (None, unit)
+            u = str(unit).lower().strip()
 
-            if u in ("ml", "milliliter", "millilitre"):
-                return (q / 1000.0, "L")
-            if u in ("l", "ltr", "liter", "litre"):
-                return (q, "L")
-            if u in ("gal", "gallon", "gallons"):
-                return (q * 3.78541, "L")
-            # default: return as-is
-            return (q, unit)
+            if u == "ml":
+                return value / 1000, "L"
 
-        for idx, row in df.iterrows():
+            if u in [
+                "liter",
+                "litre",
+                "l",
+                "ltr"
+            ]:
+                return value, "L"
+
+            if u in [
+                "gallon",
+                "gallons",
+                "gal"
+            ]:
+                return value * 3.78541, "L"
+
+            return value, unit
+
+        for index, row in df.iterrows():
+
             try:
-                raw_qty = row[qty_col]
-                raw_unit = row[unit_col]
+
+                qty = row[qty_col]
+                unit = row[unit_col]
                 activity = row[activity_col]
 
-                # Attempt safe numeric parsing
                 try:
-                    if isinstance(raw_qty, str):
-                        raw_qty_parsed = float(raw_qty.replace('.', '').replace(',', '.')) if ',' in raw_qty else float(raw_qty)
-                    else:
-                        raw_qty_parsed = float(raw_qty)
-                except Exception:
-                    raw_qty_parsed = None
+                    qty = float(str(qty))
+                except:
+                    qty = None
 
-                normalized_value, normalized_unit = normalize_unit(raw_qty_parsed, raw_unit)
+                normalized_value, normalized_unit = normalize_unit(
+                    qty,
+                    unit
+                )
 
-                is_suspicious = False
+                suspicious = False
+
                 if normalized_value is None:
-                    is_suspicious = True
-                    suspicious_count += 1
+                    suspicious = True
 
-                if normalized_value is not None and normalized_value < 0:
-                    is_suspicious = True
+                if (
+                    normalized_value is not None
+                    and normalized_value < 0
+                ):
+                    suspicious = True
+
+                if suspicious:
                     suspicious_count += 1
 
                 EmissionRecord.objects.create(
@@ -126,25 +196,35 @@ class SapUploadView(APIView):
                     scope="Scope 1",
                     category="Fuel Consumption",
                     activity_type=str(activity),
-                    original_value=raw_qty_parsed if raw_qty_parsed is not None else 0.0,
-                    original_unit=str(raw_unit),
-                    normalized_value=normalized_value if normalized_value is not None else 0.0,
-                    normalized_unit=normalized_unit if normalized_unit else str(raw_unit),
-                    is_suspicious=is_suspicious,
+                    original_value=qty or 0,
+                    original_unit=str(unit),
+                    normalized_value=
+                    normalized_value or 0,
+                    normalized_unit=
+                    normalized_unit,
+                    is_suspicious=suspicious
                 )
 
                 records_created += 1
 
             except Exception as e:
-                errors.append({"row_index": int(idx), "error": str(e)})
 
-        result = {
-            "message": "Upload processed",
-            "file_name": uploaded_file.name,
-            "rows_read": len(df),
-            "records_created": records_created,
-            "suspicious_records": suspicious_count,
-            "errors": errors[:10]
-        }
+                errors.append({
+                    "row": index,
+                    "error": str(e)
+                })
 
-        return Response(result)
+        return Response({
+            "message":
+            "Upload processed successfully",
+            "file_name":
+            uploaded_file.name,
+            "rows_read":
+            len(df),
+            "records_created":
+            records_created,
+            "suspicious_records":
+            suspicious_count,
+            "errors":
+            errors[:10]
+        })
