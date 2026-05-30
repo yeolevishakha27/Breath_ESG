@@ -16,9 +16,18 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Security
-SECRET_KEY = 'django-insecure-87!c$5t2lm4i_8*)7ryy75^gd4(92**is(%lwpfj%7orv)#=tn'
+# SECRET_KEY = 'django-insecure-87!c$5t2lm4i_8*)7ryy75^gd4(92**is(%lwpfj%7orv)#=tn'
 
-DEBUG = os.getenv("DEBUG", "False") == "True"
+# DEBUG = os.getenv("DEBUG", "False") == "True"
+SECRET_KEY = os.getenv(
+    "SECRET_KEY",
+    "django-temp-secret"
+)
+
+DEBUG = os.getenv(
+    "DEBUG",
+    "False"
+) == "True"
 
 ALLOWED_HOSTS = [
     ".onrender.com",
@@ -138,3 +147,7 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.AllowAny',
     ]
 }
+
+STATIC_URL = "static/"
+
+STATIC_ROOT = BASE_DIR / "staticfiles"
